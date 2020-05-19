@@ -13,6 +13,7 @@ import (
     "strings"
     "strconv"
     "io/ioutil"
+    "time"
     //"encoding/hex"
 )
 
@@ -23,7 +24,7 @@ func main() {
     //get port and ip address to dial
 
     if len(os.Args) != 5 {
-        fmt.Println("use example: tcpClient 127.0.0.1 7005 send \"t*t.txt\"(pattern)")
+        fmt.Println("use example: run client.go 127.0.0.1 9000 send \"t*t.txt\"(pattern)")
         return
     }
 
@@ -68,6 +69,7 @@ func main() {
         } else {
             fmt.Println("Bad Command")
         }
+	time.Sleep(800 * time.Millisecond)  //This helps not overshooting the server with too quick consecutive requests and may cause bugs
     }
     
 
