@@ -131,9 +131,62 @@ func getFileFromClient(connection net.Conn){
     return 
 }
 
+func fillString(retunString string, toLength int) string {
+    for {
+        lengtString := len(retunString)
+	if lengtString < toLength {
+	    retunString = retunString + ":"
+	    continue
+	}
+	break
+    }
+    return retunString
+}
+
 
 func sendFileToClient(fileName string, connection net.Conn){
-    fmt.Println("Testing")
+    fmt.Println("Testing Server send")
+    response_buffer := make([]byte, BUFFERSIZE)
+    _, error := connection.Read(response_buffer)
+
+    if error != nil {
+        fmt.Println("There is an error reading response in connection", error.Error())
+        return
+    }
+
+    defer connection.Close()
+    fmt.Println(string(response_buffer))
+    fmt.Println("Server is going to send item!")
+    
+    file, err := os.Open("./"+fileName)
+    if err != nil {
+	fmt.Println(err)
+	return
+    }
+    fmt.Println(fileName)
+    fileInfo, err := file.Stat()
+    if err != nil {
+	fmt.Println(err)
+	return
+    }
+    fileSize := fillString(strconv.FormatInt(fileInfo.Size(), 10), 10)
+    fileSendName := fillString(fileInfo.Name(), 64)
+    fmt.Println("Sending filename and filesize!")
+    connection.Write([]byte(fileSize))
+    connection.Write([]byte(fileSendName))
+    sendBuffer := make([]byte, BUFFERSIZE)
+    fmt.Println("Start sending file!")
+    sent_byte_count := 0
+    for {
+	_, err = file.Read(sendBuffer)
+	if err == io.EOF {
+	    break
+	}
+	connection.Write(sendBuffer)
+        sent_byte_count = sent_byte_count + BUFFERSIZE
+        fmt.Println("Sending process:", sent_byte_count, fileInfo.Size(), (float64(sent_byte_count) / float64(fileInfo.Size())))
+    }
+    fmt.Println("File has been sent, closing connection!")
 }
 
 // END SERVER //

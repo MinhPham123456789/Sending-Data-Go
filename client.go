@@ -2,7 +2,7 @@
     package main
 
 import (
-    "bytes"
+    //"bytes"
     //"crypto/sha256"
     "regexp"
     "fmt"
@@ -25,6 +25,7 @@ func main() {
 
     if len(os.Args) != 5 {
         fmt.Println("use example: run client.go 127.0.0.1 9000 send \"t*t.txt\"(pattern)")
+        fmt.Println("use example: run client.go 127.0.0.1 9000 get item_name")
         return
     }
 
@@ -33,7 +34,7 @@ func main() {
     var command string = os.Args[3]
     var name_pattern string = os.Args[4]
 
-    names, err := ioutil.ReadDir("./")
+    names, err := ioutil.ReadDir("../Downloads/")
     if err != nil {
         log.Fatal(err)
     }
@@ -50,7 +51,10 @@ func main() {
             names_array = append(names_array, n.Name())
         }
     }
-    //fmt.Println(names_array)
+    if command == "get" {
+        names_array = append(names_array, name_pattern)
+    }
+    fmt.Println(names_array)
     
 
     for len(names_array) > 0 {
@@ -61,7 +65,9 @@ func main() {
            return
         }
         if command == "get" {
-            getFileFromServer(names_array[0], connection)
+            connection.Write([]byte("get " + names_array[0]))  // name_pattern in get command is item name
+            names_array = names_array[1:]
+            getFileFromServer(connection)
 
         } else if command == "send" {
             sendFileToServer(names_array[0], connection)
@@ -90,7 +96,7 @@ func sendFileToServer(fileName string, connection net.Conn) {
     fmt.Println(string(response_buffer))
     fmt.Println("A client has connected!")
     //fmt.Println(os.Stat("/home/neuralnet/test.txt"))
-    file, err := os.Open(fileName)
+    file, err := os.Open("../Downloads/"+fileName)
     if err != nil {
 	fmt.Println(err)
 	return
@@ -108,12 +114,15 @@ func sendFileToServer(fileName string, connection net.Conn) {
     connection.Write([]byte(fileSendName))
     sendBuffer := make([]byte, BUFFERSIZE)
     fmt.Println("Start sending file!")
+    sent_byte_count := 0
     for {
 	_, err = file.Read(sendBuffer)
 	if err == io.EOF {
 	    break
 	}
 	connection.Write(sendBuffer)
+        sent_byte_count = sent_byte_count + BUFFERSIZE
+        fmt.Println("Sending process:", sent_byte_count, fileInfo.Size(), (float64(sent_byte_count) / float64(fileInfo.Size())))
     }
     fmt.Println("File has been sent, closing connection!")
 
@@ -155,35 +164,46 @@ func fillString(retunString string, toLength int) string {
 
 
 
-func getFileFromServer(fileName string, connection net.Conn) {
+func getFileFromServer(connection net.Conn) {
 
-    var currentByte int64 = 0
+    defer connection.Close()
+    fmt.Println("Connected to server, start receiving the file name and file size")
+    bufferFileName := make([]byte, 64)
+    bufferFileSize := make([]byte, 10)
+    server_response := make([]byte, BUFFERSIZE)
+    connection.Read(server_response)
+    fmt.Println(string(server_response))
+    
+    // Send ready signal
+    connection.Write([]byte("Ready to receive"))
 
-    fileBuffer := make([]byte, BUFFERSIZE)
+    connection.Read(bufferFileSize)
+    fileSize, _ := strconv.ParseInt(strings.Trim(string(bufferFileSize), ":"), 10, 64)
 
-    var err error
-    file, err := os.Create(strings.TrimSpace(fileName))
+    connection.Read(bufferFileName)
+    fileName := strings.Trim(string(bufferFileName), ":")
+    
+    newFile, err := os.Create("./test/"+fileName)
+
     if err != nil {
-        log.Fatal(err)
+	panic(err)
     }
-    connection.Write([]byte("get " + fileName))
+    defer newFile.Close()
+    var receivedBytes int64
+
     for {
-
-        connection.Read(fileBuffer)
-        cleanedFileBuffer := bytes.Trim(fileBuffer, "\x00")
-
-        _, err = file.WriteAt(cleanedFileBuffer, currentByte)
-
-        currentByte += BUFFERSIZE
-
-        if err == io.EOF {
+        //fmt.Println("Size:", fileSize, receivedBytes)
+	if (fileSize - receivedBytes) != 0 && (fileSize - receivedBytes) < BUFFERSIZE {
+	    io.CopyN(newFile, connection, (fileSize - receivedBytes))
+	    connection.Read(make([]byte, (receivedBytes+BUFFERSIZE)-fileSize))
+	    break
+	} else if (fileSize - receivedBytes) == 0 {	// This will break the loop when the received byte is equal to size. not hang on connection Read() when (fileSize - receivedBytes) == 0
             break
         }
-
+	io.CopyN(newFile, connection, BUFFERSIZE)
+	receivedBytes += BUFFERSIZE
     }
-
-    file.Close()
-    return
+    fmt.Println("Received file completely!", fileName)
 
 }
 // END CLIENT //
